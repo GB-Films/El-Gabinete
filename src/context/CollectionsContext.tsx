@@ -31,8 +31,8 @@ function normalizeCollection(id: string, data: Partial<CuratedCollection>): Cura
         : productIds[0] ?? "",
     published: data.published !== false,
     order: Number.isFinite(Number(data.order)) ? Number(data.order) : 0,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt,
+    ...(data.createdAt !== undefined ? { createdAt: data.createdAt } : {}),
+    ...(data.updatedAt !== undefined ? { updatedAt: data.updatedAt } : {}),
   };
 }
 

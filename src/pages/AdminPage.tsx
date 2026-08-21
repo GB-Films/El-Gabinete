@@ -770,8 +770,20 @@ function collectionSlug(value: string) {
 
 function serializeCollections(collections: CuratedCollection[]) {
   return Object.fromEntries(
-    collections.map(({ id, ...collection }) => [id, collection]),
+    collections.map(({ id, createdAt, updatedAt, ...collection }) => [
+      id,
+      {
+        ...collection,
+        ...(createdAt !== undefined ? { createdAt } : {}),
+        ...(updatedAt !== undefined ? { updatedAt } : {}),
+      },
+    ]),
   );
+}
+
+function collectionSaveError(error: unknown) {
+  const code = (error as { code?: string }).code?.replace(/^firestore\//, "");
+  return `No se pudo guardar la colección.${code ? ` Código: ${code}.` : ""} Revisá la conexión y los permisos.`;
 }
 
 function isErrorMessage(message: string) {
@@ -922,7 +934,7 @@ function AdminCollections({
       onGlobalMessage(`Colección guardada: ${title}.`);
     } catch (error) {
       console.error(error);
-      onGlobalMessage("No se pudo guardar la colección. Revisá la conexión y los permisos.");
+      onGlobalMessage(collectionSaveError(error));
     } finally {
       setSaving(false);
     }
