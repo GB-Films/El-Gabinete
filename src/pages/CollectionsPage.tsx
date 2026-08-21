@@ -67,44 +67,46 @@ export function CollectionsPage() {
         </section>
       )}
 
-      <div className="collections-section-heading category-collections-heading">
-        <div>
-          <p className="eyebrow">Archivo completo</p>
-          <h2>Explorá por categoría.</h2>
-        </div>
-      </div>
+      {!loadingCollections && publishedCollections.length === 0 && (
+        <>
+          <div className="collections-section-heading category-collections-heading">
+            <div>
+              <p className="eyebrow">Archivo completo</p>
+              <h2>Explorá por categoría.</h2>
+            </div>
+          </div>
 
-      {loading ? (
-        <div className="catalog-loading" role="status">Preparando categorías…</div>
-      ) : groups.length === 0 ? (
-        <div className="catalog-error">
-          <strong>Las categorías todavía no están disponibles.</strong>
-          <Link to="/catalogo">Ir al catálogo</Link>
-        </div>
-      ) : (
-        <section className="collection-category-grid mt-8 grid">
-          {groups.map((group) => (
-            <Link
-              key={group.category}
-              to={`/catalogo?categoria=${encodeURIComponent(group.category)}`}
-              className="collection-category-card app-interactive-tile"
-            >
-              {group.imageProduct && <ObjectImage product={group.imageProduct} compact />}
-              <div className="collection-category-body">
-                <p className="collection-count">
-                  <strong>{group.products.length}</strong>
-                  <span>{group.products.length === 1 ? "Pieza disponible" : "Piezas disponibles"}</span>
-                </p>
-                <h2>
-                  {group.category}
-                </h2>
-                <span className="collection-category-action">
-                  Ver objetos <ArrowRight className="interactive-tile-arrow" size={15} />
-                </span>
-              </div>
-            </Link>
-          ))}
-        </section>
+          {loading ? (
+            <div className="catalog-loading" role="status">Preparando categorías…</div>
+          ) : groups.length === 0 ? (
+            <div className="catalog-error">
+              <strong>Las categorías todavía no están disponibles.</strong>
+              <Link to="/catalogo">Ir al catálogo</Link>
+            </div>
+          ) : (
+            <section className="collection-category-grid mt-8 grid">
+              {groups.map((group) => (
+                <Link
+                  key={group.category}
+                  to={`/catalogo?categoria=${encodeURIComponent(group.category)}`}
+                  className="collection-category-card app-interactive-tile"
+                >
+                  {group.imageProduct && <ObjectImage product={group.imageProduct} compact />}
+                  <div className="collection-category-body">
+                    <p className="collection-count">
+                      <strong>{group.products.length}</strong>
+                      <span>{group.products.length === 1 ? "Pieza disponible" : "Piezas disponibles"}</span>
+                    </p>
+                    <h2>{group.category}</h2>
+                    <span className="collection-category-action">
+                      Ver objetos <ArrowRight className="interactive-tile-arrow" size={15} />
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </section>
+          )}
+        </>
       )}
     </div>
   );

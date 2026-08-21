@@ -9,6 +9,7 @@ interface CollectionsContextValue {
   collections: CuratedCollection[];
   publishedCollections: CuratedCollection[];
   loadingCollections: boolean;
+  collectionsConfigured: boolean;
   collectionsError: string;
 }
 
@@ -38,6 +39,7 @@ function normalizeCollection(id: string, data: Partial<CuratedCollection>): Cura
 export function CollectionsProvider({ children }: PropsWithChildren) {
   const [collections, setCollections] = useState<CuratedCollection[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(true);
+  const [collectionsConfigured, setCollectionsConfigured] = useState(false);
   const [collectionsError, setCollectionsError] = useState("");
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
     return onSnapshot(
       doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID),
       (snapshot) => {
+        setCollectionsConfigured(snapshot.exists());
         const storedCollections = snapshot.exists() && Array.isArray(snapshot.data().collections)
           ? snapshot.data().collections as Partial<CuratedCollection>[]
           : [];
@@ -77,8 +80,8 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
   );
 
   const value = useMemo(
-    () => ({ collections, publishedCollections, loadingCollections, collectionsError }),
-    [collections, publishedCollections, loadingCollections, collectionsError],
+    () => ({ collections, publishedCollections, loadingCollections, collectionsConfigured, collectionsError }),
+    [collections, publishedCollections, loadingCollections, collectionsConfigured, collectionsError],
   );
 
   return <CollectionsContext.Provider value={value}>{children}</CollectionsContext.Provider>;

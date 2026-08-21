@@ -21,7 +21,7 @@ import {
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   deleteDoc,
@@ -769,10 +769,12 @@ function collectionSlug(value: string) {
 
 function AdminCollections({
   collections,
+  collectionsConfigured,
   products,
   onGlobalMessage,
 }: {
   collections: CuratedCollection[];
+  collectionsConfigured: boolean;
   products: Product[];
   onGlobalMessage: (message: string) => void;
 }) {
@@ -780,6 +782,29 @@ function AdminCollections({
   const [form, setForm] = useState<CollectionForm>(emptyCollectionForm);
   const [productSearch, setProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const seededDefaults = useRef(false);
+  const selectedInitialCollection = useRef(false);
+  const defaultCollections = useMemo(
+    () => categories
+      .map((category, order): CuratedCollection | null => {
+        const categoryProducts = products.filter((product) => product.category === category);
+        if (categoryProducts.length === 0) return null;
+        const coverProduct = categoryProducts.find((product) => product.images.length > 0)
+          ?? categoryProducts[0];
+        return {
+          id: collectionSlug(category),
+          title: category,
+          description: `Piezas de ${category.toLocaleLowerCase("es")} para recorrer y combinar en una misma escena.`,
+          productIds: categoryProducts.map((product) => product.id),
+          coverProductId: coverProduct.id,
+          published: true,
+          order,
+        };
+      })
+      .filter((item): item is CuratedCollection => item !== null),
+    [products],
+  );
+  const editableCollections = collectionsConfigured ? collections : defaultCollections;
   const sortedProducts = useMemo(
     () => [...products].sort((a, b) => a.name.localeCompare(b.name)),
     [products],
@@ -791,6 +816,26 @@ function AdminCollections({
       `${product.id} ${product.name} ${product.category}`.toLocaleLowerCase("es").includes(query),
     );
   }, [productSearch, sortedProducts]);
+
+  useEffect(() => {
+    if (!db || collectionsConfigured || defaultCollections.length === 0 || seededDefaults.current) return;
+    seededDefaults.current = true;
+    setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
+      kind: "collections-config",
+      collections: defaultCollections,
+      updatedAt: serverTimestamp(),
+    }).catch((error) => {
+      seededDefaults.current = false;
+      console.error(error);
+      onGlobalMessage("No se pudieron preparar las colecciones existentes.");
+    });
+  }, [collectionsConfigured, db, defaultCollections, onGlobalMessage]);
+
+  useEffect(() => {
+    if (selectedInitialCollection.current || editableCollections.length === 0) return;
+    selectedInitialCollection.current = true;
+    setForm(collectionToForm(editableCollections[0]));
+  }, [editableCollections]);
 
   const newCollection = () => {
     setForm(emptyCollectionForm);
@@ -828,9 +873,9 @@ function AdminCollections({
     let id = form.id;
     if (!id) {
       const base = collectionSlug(title) || "coleccion";
-      id = collections.some((item) => item.id === base) ? `${base}-${Date.now().toString(36)}` : base;
+      id = editableCollections.some((item) => item.id === base) ? `${base}-${Date.now().toString(36)}` : base;
     }
-    const existing = collections.find((item) => item.id === id);
+    const existing = editableCollections.find((item) => item.id === id);
     const now = new Date().toISOString();
     const nextCollection: CuratedCollection = {
       id,
@@ -846,8 +891,8 @@ function AdminCollections({
       updatedAt: now,
     };
     const nextCollections = existing
-      ? collections.map((item) => item.id === id ? nextCollection : item)
-      : [...collections, nextCollection];
+      ? editableCollections.map((item) => item.id === id ? nextCollection : item)
+      : [...editableCollections, nextCollection];
 
     try {
       setSaving(true);
@@ -873,7 +918,7 @@ function AdminCollections({
       setSaving(true);
       await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
         kind: "collections-config",
-        collections: collections.filter((item) => item.id !== form.id),
+        collections: editableCollections.filter((item) => item.id !== form.id),
         updatedAt: serverTimestamp(),
       });
       setForm(emptyCollectionForm);
@@ -896,7 +941,7 @@ function AdminCollections({
         <button type="button" className="admin-new-button" onClick={newCollection}>
           <Plus size={16} />Nueva colección
         </button>
-        {collections.map((item) => (
+        {editableCollections.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -1166,7 +1211,7 @@ export function AdminPage() {
   const db = getFirebaseDb();
   const { user, isAdmin, checkingAdmin, loginWithGoogle, logout, authError } = useAuth();
   const { products, syncMode } = useCatalog();
-  const { collections, loadingCollections } = useCollections();
+  const { collections, collectionsConfigured, loadingCollections } = useCollections();
   const { bookings, loadingBookings } = useAvailability();
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [message, setMessage] = useState("");
@@ -1274,7 +1319,7 @@ export function AdminPage() {
           {activeTab === "bookings" && <AdminBookings bookings={bookings} profiles={profiles} />}
           {activeTab === "calendar" && <AdminCalendar bookings={bookings} />}
           {activeTab === "customers" && <AdminCustomers profiles={profiles} bookings={bookings} />}
-          {activeTab === "collections" && <AdminCollections collections={collections} products={products} onGlobalMessage={setMessage} />}
+          {activeTab === "collections" && <AdminCollections collections={collections} collectionsConfigured={collectionsConfigured} products={products} onGlobalMessage={setMessage} />}
           {activeTab === "catalog" && <AdminCatalog products={products} bookings={bookings} onGlobalMessage={setMessage} />}
         </>
       )}
