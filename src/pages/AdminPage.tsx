@@ -6,6 +6,7 @@ import {
   CircleDollarSign,
   Clock3,
   ImagePlus,
+  Layers3,
   LayoutDashboard,
   Lock,
   LogOut,
@@ -37,11 +38,13 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 import { useAuth } from "../context/AuthContext";
 import { useAvailability } from "../context/AvailabilityContext";
 import { useCatalog } from "../context/CatalogContext";
+import { COLLECTIONS_CONFIG_PRODUCT_ID, useCollections } from "../context/CollectionsContext";
 import { categories } from "../data/products";
 import { firebaseEnabled, getFirebaseApp, getFirebaseDb } from "../services/firebase";
 import type {
   Availability,
   Booking,
+  CuratedCollection,
   Product,
   ProductStatus,
   ProductVisual,
@@ -62,7 +65,7 @@ import {
   isReservationHoldExpired,
 } from "../utils/reservations";
 
-type AdminTab = "overview" | "bookings" | "calendar" | "customers" | "catalog";
+type AdminTab = "overview" | "bookings" | "calendar" | "customers" | "catalog" | "collections";
 
 const activeStatuses: ReservationStatus[] = [
   "request_sent",
@@ -722,6 +725,254 @@ function getNextProductId(products: Product[]) {
   return String(highest + 1).padStart(3, "0");
 }
 
+interface CollectionForm {
+  id: string;
+  title: string;
+  description: string;
+  productIds: string[];
+  coverProductId: string;
+  published: boolean;
+  order: string;
+}
+
+const emptyCollectionForm: CollectionForm = {
+  id: "",
+  title: "",
+  description: "",
+  productIds: [],
+  coverProductId: "",
+  published: true,
+  order: "0",
+};
+
+function collectionToForm(item: CuratedCollection): CollectionForm {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    productIds: item.productIds,
+    coverProductId: item.coverProductId,
+    published: item.published,
+    order: String(item.order),
+  };
+}
+
+function collectionSlug(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
+}
+
+function AdminCollections({
+  collections,
+  products,
+  onGlobalMessage,
+}: {
+  collections: CuratedCollection[];
+  products: Product[];
+  onGlobalMessage: (message: string) => void;
+}) {
+  const db = getFirebaseDb();
+  const [form, setForm] = useState<CollectionForm>(emptyCollectionForm);
+  const [productSearch, setProductSearch] = useState("");
+  const [saving, setSaving] = useState(false);
+  const sortedProducts = useMemo(
+    () => [...products].sort((a, b) => a.name.localeCompare(b.name)),
+    [products],
+  );
+  const visibleProducts = useMemo(() => {
+    const query = productSearch.trim().toLocaleLowerCase("es");
+    if (!query) return sortedProducts;
+    return sortedProducts.filter((product) =>
+      `${product.id} ${product.name} ${product.category}`.toLocaleLowerCase("es").includes(query),
+    );
+  }, [productSearch, sortedProducts]);
+
+  const newCollection = () => {
+    setForm(emptyCollectionForm);
+    setProductSearch("");
+    onGlobalMessage("");
+  };
+
+  const toggleProduct = (productId: string) => {
+    setForm((current) => {
+      const selected = current.productIds.includes(productId);
+      const productIds = selected
+        ? current.productIds.filter((id) => id !== productId)
+        : [...current.productIds, productId];
+      const coverProductId = productIds.includes(current.coverProductId)
+        ? current.coverProductId
+        : productIds[0] ?? "";
+      return { ...current, productIds, coverProductId };
+    });
+  };
+
+  const saveCollection = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!db) return;
+    const title = form.title.trim();
+    if (!title) {
+      onGlobalMessage("Escribí un nombre para la colección.");
+      return;
+    }
+    const productIds = form.productIds.filter((id) => products.some((product) => product.id === id));
+    if (productIds.length === 0) {
+      onGlobalMessage("Elegí al menos un producto para la colección.");
+      return;
+    }
+
+    let id = form.id;
+    if (!id) {
+      const base = collectionSlug(title) || "coleccion";
+      id = collections.some((item) => item.id === base) ? `${base}-${Date.now().toString(36)}` : base;
+    }
+    const existing = collections.find((item) => item.id === id);
+    const now = new Date().toISOString();
+    const nextCollection: CuratedCollection = {
+      id,
+      title,
+      description: form.description.trim(),
+      productIds,
+      coverProductId: productIds.includes(form.coverProductId)
+        ? form.coverProductId
+        : productIds[0],
+      published: form.published,
+      order: Number(form.order) || 0,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    const nextCollections = existing
+      ? collections.map((item) => item.id === id ? nextCollection : item)
+      : [...collections, nextCollection];
+
+    try {
+      setSaving(true);
+      await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
+        kind: "collections-config",
+        collections: nextCollections,
+        updatedAt: serverTimestamp(),
+      });
+      setForm((current) => ({ ...current, id }));
+      onGlobalMessage(`Colección guardada: ${title}.`);
+    } catch (error) {
+      console.error(error);
+      onGlobalMessage("No se pudo guardar la colección. Revisá la conexión y los permisos.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeCollection = async () => {
+    if (!db || !form.id) return;
+    if (!window.confirm(`¿Eliminar la colección ${form.title}? Los productos no se eliminarán.`)) return;
+    try {
+      setSaving(true);
+      await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
+        kind: "collections-config",
+        collections: collections.filter((item) => item.id !== form.id),
+        updatedAt: serverTimestamp(),
+      });
+      setForm(emptyCollectionForm);
+      onGlobalMessage("Colección eliminada. Los productos siguen en el catálogo.");
+    } catch (error) {
+      console.error(error);
+      onGlobalMessage("No se pudo eliminar la colección.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const selectedProducts = form.productIds
+    .map((id) => products.find((product) => product.id === id))
+    .filter((product) => product !== undefined);
+
+  return (
+    <div className="admin-layout admin-collections-layout">
+      <aside className="admin-list">
+        <button type="button" className="admin-new-button" onClick={newCollection}>
+          <Plus size={16} />Nueva colección
+        </button>
+        {collections.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={form.id === item.id ? "is-active" : ""}
+            onClick={() => {
+              setForm(collectionToForm(item));
+              setProductSearch("");
+            }}
+          >
+            <strong>{item.title}</strong>
+            <span>{item.productIds.length} objetos · {item.published ? "Publicada" : "Oculta"}</span>
+          </button>
+        ))}
+      </aside>
+
+      <form onSubmit={saveCollection} className="admin-editor admin-collection-editor">
+        <div className="admin-editor-title">
+          <div>
+            <p className="eyebrow">Colección editable</p>
+            <h2>{form.title || "Colección nueva"}</h2>
+          </div>
+          <div className="admin-actions">
+            <button type="button" className="gabinete-button-secondary" onClick={removeCollection} disabled={!form.id || saving}>
+              <Trash2 size={17} />Eliminar
+            </button>
+            <button type="submit" className="gabinete-button" disabled={saving}>
+              <Save size={17} />{saving ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+        </div>
+
+        <div className="admin-grid admin-collection-fields">
+          <label>Nombre<input className="gabinete-input" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
+          <label>Orden<input className="gabinete-input" type="number" value={form.order} onChange={(event) => setForm((current) => ({ ...current, order: event.target.value }))} /></label>
+          <label className="admin-collection-publish">
+            <input type="checkbox" checked={form.published} onChange={(event) => setForm((current) => ({ ...current, published: event.target.checked }))} />
+            <span><strong>Publicada</strong><em>Visible para todos en Colecciones</em></span>
+          </label>
+        </div>
+
+        <label className="admin-wide">Descripción<textarea className="gabinete-input" rows={3} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Qué une a estas piezas y para qué tipo de escena funcionan." /></label>
+
+        <section className="admin-collection-products">
+          <div className="admin-section-heading">
+            <div><p className="eyebrow">Contenido</p><h3>Elegí los productos</h3></div>
+            <span>{form.productIds.length} seleccionados</span>
+          </div>
+          <label className="admin-collection-search">
+            <Search size={17} />
+            <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Buscar por nombre, ID o categoría" />
+          </label>
+          <div className="admin-product-picker">
+            {visibleProducts.map((product) => (
+              <label key={product.id} className={form.productIds.includes(product.id) ? "is-selected" : ""}>
+                <input type="checkbox" checked={form.productIds.includes(product.id)} onChange={() => toggleProduct(product.id)} />
+                <span className="admin-product-picker-image">
+                  {product.images[0] ? <img src={product.images[0]} alt="" /> : <PackageCheck size={20} />}
+                </span>
+                <span><strong>{product.name}</strong><em>{product.id} · {product.category}</em></span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {selectedProducts.length > 0 && (
+          <label className="admin-wide">Producto de portada
+            <select className="gabinete-input" value={form.coverProductId || selectedProducts[0].id} onChange={(event) => setForm((current) => ({ ...current, coverProductId: event.target.value }))}>
+              {selectedProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.id}</option>)}
+            </select>
+          </label>
+        )}
+      </form>
+    </div>
+  );
+}
+
 function AdminCatalog({
   products,
   bookings,
@@ -915,6 +1166,7 @@ export function AdminPage() {
   const db = getFirebaseDb();
   const { user, isAdmin, checkingAdmin, loginWithGoogle, logout, authError } = useAuth();
   const { products, syncMode } = useCatalog();
+  const { collections, loadingCollections } = useCollections();
   const { bookings, loadingBookings } = useAvailability();
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [message, setMessage] = useState("");
@@ -979,6 +1231,7 @@ export function AdminPage() {
     { id: "bookings", label: "Reservas", icon: PackageCheck },
     { id: "calendar", label: "Calendario", icon: CalendarDays },
     { id: "customers", label: "Clientes", icon: UsersRound },
+    { id: "collections", label: "Colecciones", icon: Layers3 },
     { id: "catalog", label: "Catálogo", icon: UploadCloud },
   ];
 
@@ -1013,7 +1266,7 @@ export function AdminPage() {
         ))}
       </div>
 
-      {loadingBookings && activeTab !== "catalog" ? (
+      {(loadingBookings && activeTab !== "catalog" && activeTab !== "collections") || (loadingCollections && activeTab === "collections") ? (
         <div className="admin-loading" role="status">Actualizando el rental…</div>
       ) : (
         <>
@@ -1021,6 +1274,7 @@ export function AdminPage() {
           {activeTab === "bookings" && <AdminBookings bookings={bookings} profiles={profiles} />}
           {activeTab === "calendar" && <AdminCalendar bookings={bookings} />}
           {activeTab === "customers" && <AdminCustomers profiles={profiles} bookings={bookings} />}
+          {activeTab === "collections" && <AdminCollections collections={collections} products={products} onGlobalMessage={setMessage} />}
           {activeTab === "catalog" && <AdminCatalog products={products} bookings={bookings} onGlobalMessage={setMessage} />}
         </>
       )}

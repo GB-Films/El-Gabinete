@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { ProductFilters, type CatalogFilters } from "../components/ProductFilters";
 import { ProductGrid } from "../components/ProductGrid";
 import { useCatalog } from "../context/CatalogContext";
+import { useCollections } from "../context/CollectionsContext";
 import type { Category } from "../types";
 
 const PRODUCTS_PER_PAGE = 24;
@@ -15,10 +16,17 @@ function normalize(value: string) {
 export function CatalogPage() {
   const [searchParams] = useSearchParams();
   const { products, categories, availableTags, loading, error } = useCatalog();
+  const { publishedCollections, loadingCollections } = useCollections();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [visibleCount, setVisibleCount] = useState(PRODUCTS_PER_PAGE);
   const initialCategory = searchParams.get("categoria");
   const initialSearch = searchParams.get("q") ?? "";
+  const collectionId = searchParams.get("coleccion");
+  const activeCollection = publishedCollections.find((item) => item.id === collectionId);
+  const collectionProductIds = useMemo(
+    () => new Set(activeCollection?.productIds ?? []),
+    [activeCollection],
+  );
   const maxCatalogPrice = Math.max(0, ...products.map((product) => product.rentalPricePerWeek));
   const [filters, setFilters] = useState<CatalogFilters>({
     search: initialSearch,
@@ -50,6 +58,7 @@ export function CatalogPage() {
   const filteredProducts = useMemo(() => {
     const query = normalize(filters.search.trim());
     const filtered = products.filter((product) => {
+      if (activeCollection && !collectionProductIds.has(product.id)) return false;
       const searchable = normalize(
         [
           product.name,
@@ -79,7 +88,7 @@ export function CatalogPage() {
       if (filters.sort === "priceDesc") return b.rentalPricePerWeek - a.rentalPricePerWeek;
       return b.featuredScore - a.featuredScore;
     });
-  }, [filters, products]);
+  }, [activeCollection, collectionProductIds, filters, products]);
 
   useEffect(() => {
     setVisibleCount(PRODUCTS_PER_PAGE);
@@ -103,8 +112,8 @@ export function CatalogPage() {
       <section className="catalog-intro-v3 simple-page-hero">
         <div className="catalog-title-block-v3">
           <p className="eyebrow">Archivo disponible</p>
-          <h1>Catálogo de props</h1>
-          <p>Filtrá por tipo, estilo, uso, precio o disponibilidad. Cada ficha incluye medidas, estado y calendario.</p>
+          <h1>{activeCollection?.title ?? "Catálogo de props"}</h1>
+          <p>{activeCollection?.description || "Filtrá por tipo, estilo, uso, precio o disponibilidad. Cada ficha incluye medidas, estado y calendario."}</p>
         </div>
 
         <div className="catalog-search-block-v3">
@@ -202,7 +211,7 @@ export function CatalogPage() {
             </label>
           </div>
 
-          {loading ? (
+          {loading || (Boolean(collectionId) && loadingCollections) ? (
             <div className="catalog-loading" role="status">
               <span />
               <p>Abriendo el catálogo…</p>

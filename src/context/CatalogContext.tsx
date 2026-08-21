@@ -147,6 +147,7 @@ export function CatalogProvider({ children }: PropsWithChildren) {
       collection(db, "products"),
       (snapshot) => {
         const nextProducts = snapshot.docs
+          .filter((productDoc) => productDoc.id !== "_collections_config")
           .map((productDoc) => normalizeProduct(productDoc.id, productDoc.data() as Partial<Product>))
           .sort((a, b) => b.featuredScore - a.featuredScore || a.name.localeCompare(b.name));
         setFirebaseProducts(nextProducts);

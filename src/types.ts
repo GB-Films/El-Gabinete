@@ -49,6 +49,18 @@ export interface Product {
   visual: ProductVisual;
 }
 
+export interface CuratedCollection {
+  id: string;
+  title: string;
+  description: string;
+  productIds: string[];
+  coverProductId: string;
+  published: boolean;
+  order: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export interface SelectionItem {
   productId: string;
   quantity: number;
