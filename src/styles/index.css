@@ -2816,6 +2816,11 @@ footer {
   color: var(--available);
   font-size: .9rem;
 }
+.admin-message.is-error {
+  border-color: rgba(173, 61, 38, .46);
+  background: rgba(173, 61, 38, .12);
+  color: #9f2f1e;
+}
 .admin-tabs {
   display: flex;
   flex-wrap: wrap;

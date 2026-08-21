@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   CircleDollarSign,
   Clock3,
   ImagePlus,
@@ -447,7 +448,7 @@ function AdminBookings({
         </select>
       </div>
 
-      {message && <p className="admin-message"><CheckCircle2 size={16} />{message}</p>}
+      {message && <AdminStatusMessage message={message} />}
       {filteredBookings.length === 0 ? (
         <p className="admin-empty-reservations">No hay reservas que coincidan con la búsqueda.</p>
       ) : (
@@ -767,6 +768,22 @@ function collectionSlug(value: string) {
     .slice(0, 60);
 }
 
+function serializeCollections(collections: CuratedCollection[]) {
+  return Object.fromEntries(
+    collections.map(({ id, ...collection }) => [id, collection]),
+  );
+}
+
+function isErrorMessage(message: string) {
+  return /^(no\b|sin\b|error\b|elegí\b|escribí\b|revisá\b|debés\b|falta\b)/i.test(message.trim());
+}
+
+function AdminStatusMessage({ message, forceError = false }: { message: string; forceError?: boolean }) {
+  const error = forceError || isErrorMessage(message);
+  const Icon = error ? CircleAlert : CheckCircle2;
+  return <p className={`admin-message${error ? " is-error" : ""}`} role={error ? "alert" : "status"}><Icon size={16} />{message}</p>;
+}
+
 function AdminCollections({
   collections,
   collectionsConfigured,
@@ -822,7 +839,7 @@ function AdminCollections({
     seededDefaults.current = true;
     setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
       kind: "collections-config",
-      collections: defaultCollections,
+      collections: serializeCollections(defaultCollections),
       updatedAt: serverTimestamp(),
     }).catch((error) => {
       seededDefaults.current = false;
@@ -898,7 +915,7 @@ function AdminCollections({
       setSaving(true);
       await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
         kind: "collections-config",
-        collections: nextCollections,
+        collections: serializeCollections(nextCollections),
         updatedAt: serverTimestamp(),
       });
       setForm((current) => ({ ...current, id }));
@@ -918,7 +935,7 @@ function AdminCollections({
       setSaving(true);
       await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
         kind: "collections-config",
-        collections: editableCollections.filter((item) => item.id !== form.id),
+        collections: serializeCollections(editableCollections.filter((item) => item.id !== form.id)),
         updatedAt: serverTimestamp(),
       });
       setForm(emptyCollectionForm);
@@ -1249,7 +1266,7 @@ export function AdminPage() {
           <p className="eyebrow">Administración</p>
           <h1>Ingresar al panel</h1>
           <p>Usá la cuenta de Google autorizada para gestionar reservas, clientes y catálogo.</p>
-          {(message || authError) && <p className="admin-message">{message || authError}</p>}
+          {(message || authError) && <AdminStatusMessage message={message || authError} forceError />}
           <button type="submit" className="gabinete-button"><Lock size={17} />Entrar con Google</button>
         </form>
       </section>
@@ -1294,7 +1311,7 @@ export function AdminPage() {
         </div>
       </div>
 
-      {message && <p className="admin-message"><CheckCircle2 size={16} />{message}</p>}
+      {message && <AdminStatusMessage message={message} />}
 
       <div className="admin-tabs" role="tablist" aria-label="Secciones del panel">
         {tabs.map(({ id, label, icon: Icon }) => (

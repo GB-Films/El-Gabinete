@@ -54,9 +54,13 @@ export function CollectionsProvider({ children }: PropsWithChildren) {
       doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID),
       (snapshot) => {
         setCollectionsConfigured(snapshot.exists());
-        const storedCollections = snapshot.exists() && Array.isArray(snapshot.data().collections)
-          ? snapshot.data().collections as Partial<CuratedCollection>[]
-          : [];
+        const rawCollections = snapshot.exists() ? snapshot.data().collections : undefined;
+        const storedCollections = Array.isArray(rawCollections)
+          ? rawCollections as Partial<CuratedCollection>[]
+          : rawCollections && typeof rawCollections === "object"
+            ? Object.entries(rawCollections as Record<string, Partial<CuratedCollection>>)
+              .map(([id, item]) => ({ ...item, id }))
+            : [];
         setCollections(
           storedCollections
             .map((item) => normalizeCollection(typeof item.id === "string" ? item.id : "", item))
