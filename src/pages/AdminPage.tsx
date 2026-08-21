@@ -796,6 +796,55 @@ function AdminStatusMessage({ message, forceError = false }: { message: string; 
   return <p className={`admin-message${error ? " is-error" : ""}`} role={error ? "alert" : "status"}><Icon size={16} />{message}</p>;
 }
 
+function AdminConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add("reservation-dialog-open");
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onCancel();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.classList.remove("reservation-dialog-open");
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [busy, onCancel, open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="reservation-cancel-dialog admin-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-confirm-title" onMouseDown={() => !busy && onCancel()}>
+      <div className="reservation-cancel-dialog-card" onMouseDown={(event) => event.stopPropagation()}>
+        <button type="button" className="reservation-cancel-dialog-close" aria-label="Cerrar confirmación" onClick={onCancel} disabled={busy}>×</button>
+        <div className="reservation-cancel-dialog-icon" aria-hidden="true"><Trash2 size={28} /></div>
+        <p className="eyebrow">Confirmar acción</p>
+        <h3 id="admin-confirm-title">{title}</h3>
+        <p>{description}</p>
+        <div className="reservation-cancel-dialog-actions">
+          <button type="button" className="reservation-dialog-back" onClick={onCancel} disabled={busy}>Volver</button>
+          <button type="button" className="reservation-dialog-confirm" onClick={onConfirm} disabled={busy}>{busy ? "Eliminando…" : confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AdminCollections({
   collections,
   collectionsConfigured,
@@ -811,6 +860,7 @@ function AdminCollections({
   const [form, setForm] = useState<CollectionForm>(emptyCollectionForm);
   const [productSearch, setProductSearch] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const seededDefaults = useRef(false);
   const selectedInitialCollection = useRef(false);
   const defaultCollections = useMemo(
@@ -942,7 +992,6 @@ function AdminCollections({
 
   const removeCollection = async () => {
     if (!db || !form.id) return;
-    if (!window.confirm(`¿Eliminar la colección ${form.title}? Los productos no se eliminarán.`)) return;
     try {
       setSaving(true);
       await setDoc(doc(db, "products", COLLECTIONS_CONFIG_PRODUCT_ID), {
@@ -951,6 +1000,7 @@ function AdminCollections({
         updatedAt: serverTimestamp(),
       });
       setForm(emptyCollectionForm);
+      setDeleteDialogOpen(false);
       onGlobalMessage("Colección eliminada. Los productos siguen en el catálogo.");
     } catch (error) {
       console.error(error);
@@ -993,7 +1043,7 @@ function AdminCollections({
             <h2>{form.title || "Colección nueva"}</h2>
           </div>
           <div className="admin-actions">
-            <button type="button" className="gabinete-button-secondary" onClick={removeCollection} disabled={!form.id || saving}>
+            <button type="button" className="gabinete-button-secondary" onClick={() => setDeleteDialogOpen(true)} disabled={!form.id || saving}>
               <Trash2 size={17} />Eliminar
             </button>
             <button type="submit" className="gabinete-button" disabled={saving}>
@@ -1043,6 +1093,15 @@ function AdminCollections({
           </label>
         )}
       </form>
+      <AdminConfirmDialog
+        open={deleteDialogOpen}
+        title={`¿Eliminar ${form.title || "esta colección"}?`}
+        description="La colección dejará de mostrarse, pero sus productos seguirán disponibles en el catálogo."
+        confirmLabel="Eliminar colección"
+        busy={saving}
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={removeCollection}
+      />
     </div>
   );
 }
@@ -1063,6 +1122,7 @@ function AdminCatalog({
   const [imageUrl, setImageUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const sortedProducts = useMemo(() => [...products].sort((a, b) => a.name.localeCompare(b.name)), [products]);
 
   const updateField = <K extends keyof ProductForm>(field: K, value: ProductForm[K]) => {
@@ -1111,8 +1171,8 @@ function AdminCatalog({
     }
   };
 
-  const removeProduct = async () => {
-    if (!db || !form.id) return;
+  const requestProductRemoval = () => {
+    if (!form.id) return;
     const usedByActiveBooking = bookings.some(
       (booking) => isActiveBooking(booking) && booking.items.some((item) => item.productId === form.id),
     );
@@ -1120,12 +1180,16 @@ function AdminCatalog({
       onGlobalMessage("No se puede eliminar: el producto forma parte de una reserva activa.");
       return;
     }
-    if (!window.confirm(`¿Eliminar ${form.name || form.id} del catálogo?`)) return;
+    setDeleteDialogOpen(true);
+  };
 
+  const removeProduct = async () => {
+    if (!db || !form.id) return;
     try {
       setSaving(true);
       await deleteDoc(doc(db, "products", form.id));
       setForm(emptyForm);
+      setDeleteDialogOpen(false);
       onGlobalMessage("Producto eliminado del catálogo.");
     } catch (error) {
       console.error(error);
@@ -1186,7 +1250,7 @@ function AdminCatalog({
         <div className="admin-editor-title">
           <div><p className="eyebrow">Ficha editable</p><h2>{form.name || "Producto nuevo"}</h2></div>
           <div className="admin-actions">
-            <button type="button" className="gabinete-button-secondary" onClick={removeProduct} disabled={!form.id || saving}><Trash2 size={17} />Eliminar</button>
+            <button type="button" className="gabinete-button-secondary" onClick={requestProductRemoval} disabled={!form.id || saving}><Trash2 size={17} />Eliminar</button>
             <button type="submit" className="gabinete-button" disabled={saving}><Save size={17} />{saving ? "Guardando…" : "Guardar"}</button>
           </div>
         </div>
@@ -1232,6 +1296,15 @@ function AdminCatalog({
           </div>
         </div>
       </form>
+      <AdminConfirmDialog
+        open={deleteDialogOpen}
+        title={`¿Eliminar ${form.name || form.id || "este producto"}?`}
+        description="El producto desaparecerá del catálogo. Esta acción no se puede deshacer."
+        confirmLabel="Eliminar producto"
+        busy={saving}
+        onCancel={() => setDeleteDialogOpen(false)}
+        onConfirm={removeProduct}
+      />
     </div>
   );
 }
